@@ -1,7 +1,7 @@
 FROM python:3.9
 
 # Repo info
-LABEL org.opencontainers.image.source=https://github.com/scc-digitalhub/digitalhub-wrapper-kfp
+LABEL org.opencontainers.image.source=https://github.com/scc-digitalhub/digitalhub-sdk-wrapper-kfp
 ARG VERSION_LOWER=0.9.0b0
 ARG VERSION_UPPER=0.10.0
 
