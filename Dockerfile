@@ -3,12 +3,12 @@ FROM python:3.9
 # Repo info
 LABEL org.opencontainers.image.source=https://github.com/scc-digitalhub/digitalhub-sdk-wrapper-kfp
 
-ARG ver_sdk=0.9.0b3
-ARG ver_python=0.9.0b1
-ARG ver_container=0.9.0b1
-ARG ver_modelserve=0.9.0b1
-ARG ver_dbt=0.9.0b1
-ARG ver_kfp=0.9.0b2
+ARG ver_sdk=0.9.0
+ARG ver_python=0.9.0
+ARG ver_container=0.9.0
+ARG ver_modelserve=0.9.0
+ARG ver_dbt=0.9.0
+ARG ver_kfp=0.9.0
 
 # Set working dir
 WORKDIR /app/
