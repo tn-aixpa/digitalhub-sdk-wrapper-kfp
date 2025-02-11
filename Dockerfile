@@ -7,7 +7,7 @@ ARG ver_sdk=0.10.0b0
 ARG ver_python=0.9.0
 ARG ver_container=0.9.0
 ARG ver_modelserve=0.9.0
-ARG ver_dbt=0.9.0
+ARG ver_dbt=0.10.0b0
 ARG ver_kfp=0.9.0
 
 # Set working dir
