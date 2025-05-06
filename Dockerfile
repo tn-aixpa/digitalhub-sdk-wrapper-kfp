@@ -4,7 +4,7 @@ FROM python:3.9
 LABEL org.opencontainers.image.source=https://github.com/scc-digitalhub/digitalhub-sdk-wrapper-kfp
 
 ARG ver_sdk=0.11.0b0
-ARG ver_python=0.10.0
+ARG ver_python=0.11.0b0
 ARG ver_container=0.11.0b0
 ARG ver_modelserve=0.10.0
 ARG ver_dbt=0.11.0b0
