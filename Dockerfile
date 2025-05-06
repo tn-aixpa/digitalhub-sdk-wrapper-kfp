@@ -8,7 +8,7 @@ ARG ver_python=0.10.0
 ARG ver_container=0.11.0b0
 ARG ver_modelserve=0.10.0
 ARG ver_dbt=0.11.0b0
-ARG ver_kfp=0.10.0
+ARG ver_kfp=0.11.0b0
 
 # Set working dir
 WORKDIR /app/
