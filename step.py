@@ -61,8 +61,6 @@ def execute_step(
     inputs: dict | None = None,
     outputs: dict | None = None,
     parameters: dict | None = None,
-    values: list | None = None,
-    args: dict | None = None,
 ) -> None:
     """
     Execute a step.
@@ -89,10 +87,6 @@ def execute_step(
         The outputs.
     parameters : dict
         The parameters.
-    values : list
-        The values.
-    args : dict
-        The args.
 
     Returns
     -------
@@ -103,13 +97,18 @@ def execute_step(
     project = dh.get_project(project)
 
     if jsonprops is not None:
-        props = json.loads(jsonprops)
-        props = {k: v for k, v in props.items() if v}
+        exec_kwargs = json.loads(jsonprops)
     else:
-        props = {}
+        exec_kwargs = {}
 
-    if args is None:
-        args = {}
+    if inputs is not None:
+        exec_kwargs["inputs"] = inputs
+
+    if outputs is not None:
+        exec_kwargs["outputs"] = outputs
+
+    if parameters is not None:
+        exec_kwargs["parameters"] = parameters
 
     if function is not None:
         LOGGER.info("Executing function " + function + " task " + action)
@@ -118,20 +117,8 @@ def execute_step(
             if function_id is not None
             else project.get_function(function)
         )
+        run = function.run(action, **exec_kwargs)
 
-        run = function.run(
-            action,
-            node_selector=props.get("node_selector", []),
-            volumes=props.get("volumes", []),
-            resources=props.get("resources", {}),
-            envs=props.get("envs", []),
-            secrets=props.get("secrets", []),
-            inputs=inputs,
-            outputs=outputs,
-            parameters=parameters,
-            values=values,
-            **args,
-        )
     elif workflow is not None:
         if action is None:
             action = "pipeline"
@@ -143,19 +130,8 @@ def execute_step(
             else project.get_workflow(workflow)
         )
 
-        run = workflow.run(
-            action,
-            node_selector=props.get("node_selector", []),
-            volumes=props.get("volumes", []),
-            resources=props.get("resources", {}),
-            envs=props.get("envs", []),
-            secrets=props.get("secrets", []),
-            inputs=inputs,
-            outputs=outputs,
-            parameters=parameters,
-            values=values,
-            **args,
-        )
+        run = workflow.run(action, **exec_kwargs)
+
     else:
         LOGGER.info("Step failed: no workflow of function defined ")
         exit(1)
@@ -184,15 +160,6 @@ def execute_step(
             # write to file val
             target_output = f"entity_{prop}"
             results[target_output] = val if isinstance(val, str) else val.key if isinstance(val, Entity) else val["key"]
-        # process values
-        if values is not None:
-            if hasattr(run, "values"):
-                for prop, val in run.values(values_list=values).items():
-                    # write to file val
-                    target_output = f"value_{prop}"
-                    results[target_output] = str(val)
-            else:
-                LOGGER.warning("Run does not have values method, cannot process values")
 
         for key, value in results.items():
             try:
@@ -237,16 +204,9 @@ def parser():
     parser.add_argument("--workflow", type=str, help="Workflow name", required=False, default=None)
     parser.add_argument("--workflow_id", type=str, help="Workflow ID", required=False, default=None)
     parser.add_argument("--action", type=str, help="Action type", required=False, default=None)
-    parser.add_argument(
-        "--jsonprops",
-        type=str,
-        help="Function execution properties in JSON format",
-        required=False,
-    )
+    parser.add_argument("--jsonprops", type=str, help="Function kwargs (as JSON)", required=False)
     parser.add_argument("--parameters", type=str, help="Function parameters", required=False)
-    parser.add_argument("-a", type=str, action="append", help="Function args", required=False)
     parser.add_argument("-ie", action="append", type=str, help="Input entity property", required=False)
-    parser.add_argument("-iv", action="append", type=str, help="Input value property", required=False)
     parser.add_argument("-oe", action="append", type=str, help="Output entity property", required=False)
     parser.add_argument("-ov", action="append", type=str, help="Output value property", required=False)
     return parser
@@ -278,17 +238,6 @@ def main(args):
             oe_value = oe[oe.find("=") + 1 :]
             outputs[oe_param] = oe_value
 
-    values = []
-    if args.ov is not None:
-        for ov in args.ov:
-            values.append(ov)
-
-    step_args = {}
-    if args.a is not None:
-        for a in args.a:
-            p = a.split("=")
-            step_args[p[0]] = p[1]
-
     execute_step(
         args.project,
         args.function,
@@ -300,8 +249,6 @@ def main(args):
         inputs,
         outputs,
         parameters,
-        values,
-        step_args,
     )
 
 
