@@ -207,8 +207,8 @@ def parser():
     parser.add_argument("--jsonprops", type=str, help="Function kwargs (as JSON)", required=False)
     parser.add_argument("--parameters", type=str, help="Function parameters", required=False)
     parser.add_argument("-ie", action="append", type=str, help="Input entity property", required=False)
+    parser.add_argument("-iv", action="append", type=str, help="Parameters value property", required=False)
     parser.add_argument("-oe", action="append", type=str, help="Output entity property", required=False)
-    parser.add_argument("-ov", action="append", type=str, help="Output value property", required=False)
     return parser
 
 
