@@ -153,20 +153,21 @@ def execute_step(
     if _is_complete(run.status.state):
         LOGGER.info("Step completed: " + run.status.state)
 
-        results = {}
+        if hasattr(run, "outputs"):
+            results = {}
 
-        # process entities
-        for prop, val in run.outputs().items():
-            # write to file val
-            target_output = f"entity_{prop}"
-            results[target_output] = val if isinstance(val, str) else val.key if isinstance(val, Entity) else val["key"]
+            # process entities
+            for prop, val in run.outputs().items():
+                # write to file val
+                target_output = f"entity_{prop}"
+                results[target_output] = val if isinstance(val, str) else val.key if isinstance(val, Entity) else val["key"]
 
-        for key, value in results.items():
-            try:
-                _write_output(key, value)
-            except Exception as e:
-                LOGGER.warning(f"Failed writing to temp file. Ignoring ({repr(e)})")
-                pass
+            for key, value in results.items():
+                try:
+                    _write_output(key, value)
+                except Exception as e:
+                    LOGGER.warning(f"Failed writing to temp file. Ignoring ({repr(e)})")
+                    pass
 
         LOGGER.info("Done.")
     else:
