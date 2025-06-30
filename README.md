@@ -1,13 +1,13 @@
 # Digitalhub wrapper KFP
 
-[![license](https://img.shields.io/badge/license-Apache%202.0-blue)](https://github.com/scc-digitalhub/digitalhub-core/LICENSE) ![GitHub Release](https://img.shields.io/github/v/release/scc-digitalhub/digitalhub-sdk-wrapper-kfp)
+[![license](https://img.shields.io/badge/license-Apache%202.0-blue)](https://github.com/tn-aixpa/digitalhub-sdk-wrapper-kfp/LICENSE) ![GitHub Release](https://img.shields.io/github/v/release/tn-aixpa/digitalhub-sdk-wrapper-kfp)
 ![Status](https://img.shields.io/badge/status-stable-gold)
 
 Wrapper for the Digitalhub SDK to be used in Kubeflow Pipelines.
 
 ## Configuration
 
-Dockerfile parameters can be set to customize the image. Parameters refers to PYPI package versions of [SDK](https://github.com/scc-digitalhub/digitalhub-sdk) and related runtimes. The following parameters are available:
+Dockerfile parameters can be set to customize the image. Parameters refers to PYPI package versions of [SDK](https://github.com/tn-aixpa/digitalhub-sdk) and related runtimes. The following parameters are available:
 
 - `ver_sdk`: Version of the SDK to use.
 - `ver_python`: Version of the python runtime to use.
