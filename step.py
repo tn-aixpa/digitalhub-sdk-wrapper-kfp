@@ -7,258 +7,199 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import time
+import typing
 
-import digitalhub as dh
 from digitalhub.entities._base.entity.entity import Entity
-from digitalhub.entities._commons.enums import State
+from digitalhub.entities._commons.enums import Relationship, State
+from digitalhub.entities.function.crud import get_function
+from digitalhub.entities.run.crud import get_run
+from digitalhub.factory.entity import entity_factory
+from digitalhub.runtimes.enums import RuntimeEnvVar
 from digitalhub.utils.logger import LOGGER
 
-# default KFP artifacts and output (ui metadata, metrics etc.)
-# directories to /tmp to allow running with security context
-KFPMETA_DIR = "/tmp"
-KFP_ARTIFACTS_DIR = "/tmp"
-
-
-def _is_finished(state: str) -> bool:
-    """
-    Check if state is finished.
-
-    Parameters
-    ----------
-    state : str
-        The state to check.
-
-    Returns
-    -------
-    bool
-        True if the state is finished, False otherwise.
-    """
-    return state in (State.COMPLETED.value, State.ERROR.value, State.STOPPED.value)
-
-
-def _is_complete(state: str) -> bool:
-    """
-    Check if state is complete.
-
-    Parameters
-    ----------
-    state : str
-        The state to check.
-
-    Returns
-    -------
-    bool
-        True if the state is complete, False otherwise.
-    """
-    return state == State.COMPLETED.value
-
-
-def execute_step(
-    project: str,
-    function: str | None = None,
-    function_id: str | None = None,
-    workflow: str | None = None,
-    workflow_id: str | None = None,
-    action: str | None = None,
-    jsonprops: str | None = None,
-    inputs: dict | None = None,
-    outputs: dict | None = None,
-    parameters: dict | None = None,
-) -> None:
-    """
-    Execute a step.
-
-    Parameters
-    ----------
-    project : str
-        The project name.
-    function : str
-        The function name.
-    function_id : str
-        The function id.
-    workflow : str
-        The workflow name.
-    workflow_id : str
-        The workflow id.
-    action : str
-        The action name.
-    jsonprops : str
-        The json properties.
-    inputs : dict
-        The inputs.
-    outputs : dict
-        The outputs.
-    parameters : dict
-        The parameters.
-
-    Returns
-    -------
-    None
-    """
-
-    LOGGER.info("Loading project " + project)
-    project = dh.get_project(project)
-
-    if jsonprops is not None:
-        exec_kwargs = json.loads(jsonprops)
-    else:
-        exec_kwargs = {}
-
-    if inputs is not None:
-        exec_kwargs["inputs"] = inputs
-
-    if outputs is not None:
-        exec_kwargs["outputs"] = outputs
-
-    if parameters is not None:
-        exec_kwargs["parameters"] = parameters
-
-    if function is not None:
-        LOGGER.info("Executing function " + function + " task " + action)
-        function = (
-            project.get_function(function, entity_id=function_id)
-            if function_id is not None
-            else project.get_function(function)
-        )
-        run = function.run(action, **exec_kwargs)
-
-    elif workflow is not None:
-        if action is None:
-            action = "pipeline"
-
-        LOGGER.info("Executing workflow " + workflow + " task " + action)
-        function = (
-            project.get_workflow(workflow, entity_id=workflow_id)
-            if workflow_id is not None
-            else project.get_workflow(workflow)
-        )
-
-        run = workflow.run(action, **exec_kwargs)
-
-    else:
-        LOGGER.info("Step failed: no workflow of function defined ")
-        exit(1)
-
-    # Wait for the run to complete
-    while not _is_finished(run.status.state):
-        time.sleep(5)
-        run = run.refresh()
-        LOGGER.info("Step state: " + run.status.state)
-
-    # write run_id
-    try:
-        _write_output("run_id", run.id)
-    except Exception as e:
-        LOGGER.warning(f"Failed writing run_id to temp file. Ignoring ({repr(e)})")
-        pass
-
-    # If the run is complete process outputs
-    if _is_complete(run.status.state):
-        LOGGER.info("Step completed: " + run.status.state)
-
-        if hasattr(run, "outputs"):
-            results = {}
-
-            # process entities
-            for prop, val in run.outputs().items():
-                # write to file val
-                target_output = f"entity_{prop}"
-                results[target_output] = val if isinstance(val, str) else val.key if isinstance(val, Entity) else val["key"]
-
-            for key, value in results.items():
-                try:
-                    _write_output(key, value)
-                except Exception as e:
-                    LOGGER.warning(f"Failed writing to temp file. Ignoring ({repr(e)})")
-                    pass
-
-        LOGGER.info("Done.")
-    else:
-        LOGGER.info("Step failed: " + run.status.state)
-        exit(1)
+if typing.TYPE_CHECKING:
+    from digitalhub.entities.function._base.entity import Function
+    from digitalhub.entities.run._base.entity import Run
 
 
 def _write_output(key: str, value: str) -> None:
-    # NOTE: if key has "../x", it would fail on path traversal
-    path = os.path.join(KFP_ARTIFACTS_DIR, key)
-    if not _is_safe_path(KFP_ARTIFACTS_DIR, path):
-        LOGGER.warning(f"Path traversal is not allowed ignoring, {path} / {key}")
+    """
+    Write an output value to a file in the Hera artifacts directory.
+
+    Parameters
+    ----------
+    key : str
+        The output key, used as the filename.
+    value : str
+        The value to write to the file.
+
+    Notes
+    -----
+    Prevents path traversal attacks by validating the output path.
+    Logs warnings if writing fails or if the path is unsafe.
+    """
+    base = "/tmp"
+    path = os.path.join(base, key)
+
+    # Check if the path is safe
+    if not base == os.path.commonpath((base, os.path.abspath(path))):
+        LOGGER.info(f"Path traversal is not allowed, ignoring: {path} / {key}")
         return
+
+    # Write the file
     path = os.path.abspath(path)
-    LOGGER.info(f"Writing artifact output, {path}, {value}")
-    with open(path, "w") as fp:
-        fp.write(value)
-    # check file
-    file_stats = os.stat(path)
-    LOGGER.debug(f"Checking file {path}: {file_stats.st_size}")
+    LOGGER.info(f"Writing artifact output: {path}, value: {value}")
+    try:
+        with open(path, "w") as fp:
+            fp.write(value)
+        LOGGER.info(f"File written: {path}, size: {os.stat(path).st_size}")
+    except Exception as e:
+        LOGGER.info(f"Failed to write output file {path}: {repr(e)}")
 
 
-def _is_safe_path(base, filepath, is_symlink=False) -> bool:
-    # Avoid path traversal attacks by ensuring that the path is safe
-    resolved_filepath = os.path.abspath(filepath) if not is_symlink else os.path.realpath(filepath)
-    return base == os.path.commonpath((base, resolved_filepath))
+def _export_outputs(run: Run) -> None:
+    """
+    Export outputs from a run.
+
+    Parameters
+    ----------
+    run : Run
+        The run to export.
+    """
+    try:
+        _write_output("run_id", run.id)
+    except Exception as e:
+        LOGGER.info(f"Failed writing run_id to temp file. Ignoring ({repr(e)})")
+
+    if not hasattr(run, "outputs"):
+        return
+
+    # Process output entities
+    results = {}
+    for prop, val in run.outputs().items():
+        target_output = f"entity_{prop}"
+        # Extract key or value depending on type
+        if isinstance(val, str):
+            results[target_output] = val
+        elif isinstance(val, Entity):
+            results[target_output] = val.key
+        elif isinstance(val, dict) and "key" in val:
+            results[target_output] = val["key"]
+        else:
+            LOGGER.info(f"Unknown output type for {prop}: {type(val)}")
+            continue
+
+    for key, value in results.items():
+        _write_output(key, value)
 
 
-def parser():
+def _parse_exec_entity(entity_key: str) -> Function:
+    """
+    Parse the executable entity from command-line arguments.
+
+    Parameters
+    ----------
+    entity_key : str
+        The key of the executable entity.
+
+    Returns
+    -------
+    Function
+        The executable entity (function).
+    """
+    LOGGER.info(f"Getting function {entity_key}.")
+    try:
+        return get_function(entity_key)
+    except Exception as e:
+        LOGGER.info(f"Step failed: Error getting function: {str(e)}")
+        exit(1)
+
+
+def execute_step(
+    func: Function,
+    exec_kwargs: dict,
+) -> None:
+    """
+    Execute a step by running the provided executable entity with the given arguments.
+    Waits for the execution to finish, writes the run ID to an output file,
+    and processes and writes any output entities if the run completes successfully.
+
+    Parameters
+    ----------
+    exec_entity : Function
+        The executable entity to run (function).
+    exec_kwargs : dict
+        The keyword arguments to pass to the entity's run method.
+    """
+    # Run
+    LOGGER.info(f"Executing {func.ENTITY_TYPE} {func.name}:{func.id}")
+
+    # Get workflow run id from run env var
+    workflow_run_id = os.getenv(RuntimeEnvVar.RUN_ID.value)
+    project = os.getenv(RuntimeEnvVar.PROJECT.value)
+    workflow_run = get_run(workflow_run_id, project=project)
+    workflow_run_key = workflow_run.key + ":" + workflow_run.id
+
+    # Get task and run kind
+    action = exec_kwargs.pop("action", None)
+    if action is None:
+        LOGGER.info("Step failed: action argument is required.")
+        exit(1)
+
+    task_kind = entity_factory.get_task_kind_from_action(func.kind, action)
+    run_kind = entity_factory.get_run_kind_from_action(func.kind, action)
+
+    # Create or update new task
+    task = func._get_or_create_task(task_kind)
+
+    # Remove execution flags
+    exec_kwargs.pop("local_execution", None)
+    exec_kwargs.pop("wait", None)
+
+    # Create run from task
+    run = task.run(run_kind, save=False, local_execution=False, **exec_kwargs)
+
+    # Set as run's parent and workflow relationship
+    run.add_relationship(Relationship.STEP_OF.value, workflow_run_key)
+    run.add_relationship(Relationship.RUN_OF.value, func.key)
+    run.save()
+    run.wait()
+
+    # Check for errors
+    if run.status.state == State.ERROR.value:
+        LOGGER.info("Step failed: " + run.status.state)
+        exit(1)
+
+    LOGGER.info("Step ended with state: " + run.status.state)
+
+    # Write run_id and outputs
+    _export_outputs(run)
+    LOGGER.info("Done.")
+
+
+def main() -> None:
+    """
+    Main function.
+    """
     parser = argparse.ArgumentParser(description="Step executor")
-
-    parser.add_argument("--project", type=str, help="Project reference", required=True)
-    parser.add_argument("--function", type=str, help="Function name", required=False, default=None)
-    parser.add_argument("--function_id", type=str, help="Function ID", required=False, default=None)
-    parser.add_argument("--workflow", type=str, help="Workflow name", required=False, default=None)
-    parser.add_argument("--workflow_id", type=str, help="Workflow ID", required=False, default=None)
-    parser.add_argument("--action", type=str, help="Action type", required=False, default=None)
-    parser.add_argument("--jsonprops", type=str, help="Function kwargs (as JSON)", required=False)
-    parser.add_argument("--parameters", type=str, help="Function parameters", required=False)
-    parser.add_argument("-ie", action="append", type=str, help="Input entity property", required=False)
-    parser.add_argument("-iv", action="append", type=str, help="Parameters value property", required=False)
-    parser.add_argument("-oe", action="append", type=str, help="Output entity property", required=False)
-    return parser
-
-
-def main(args):
-    """
-    Main function. Get run from backend and execute function.
-    """
-
-    inputs = {}
-    if args.ie is not None:
-        for ie in args.ie:
-            ie_param = ie[0 : ie.find("=")]
-            ie_value = ie[ie.find("=") + 1 :]
-            inputs[ie_param] = ie_value
-
-    parameters = {}
-    if args.iv is not None:
-        for iv in args.iv:
-            iv_param = iv[0 : iv.find("=")]
-            iv_value = iv[iv.find("=") + 1 :]
-            parameters[iv_param] = iv_value
-
-    outputs = {}
-    if args.oe is not None:
-        for oe in args.oe:
-            oe_param = oe[0 : oe.find("=")]
-            oe_value = oe[oe.find("=") + 1 :]
-            outputs[oe_param] = oe_value
-
-    execute_step(
-        args.project,
-        args.function,
-        args.function_id,
-        args.workflow,
-        args.workflow_id,
-        args.action,
-        args.jsonprops,
-        inputs,
-        outputs,
-        parameters,
+    parser.add_argument(
+        "--entity",
+        type=str,
+        help="Executable entity key",
+        required=True,
     )
+    parser.add_argument(
+        "--kwargs",
+        type=str,
+        help="Execution keyword arguments",
+        required=True,
+    )
+
+    args = parser.parse_args()
+    exec_entity = _parse_exec_entity(args.entity)
+    exec_kwargs = json.loads(args.kwargs)
+    execute_step(exec_entity, exec_kwargs)
 
 
 if __name__ == "__main__":
-    # Defining and parsing the command-line arguments
-    args = parser().parse_args()
-
-    main(args)
+    main()
